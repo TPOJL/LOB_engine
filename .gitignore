@@ -2,12 +2,14 @@
 *.exe
 *.out
 *.app
+*.dSYM/
 *.o
 *.obj
 *.a
 *.so
 *.dylib
 lob_engine
+lob_test
 build/
 bin/
 
