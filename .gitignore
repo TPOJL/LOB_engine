@@ -1,9 +1,30 @@
-# Игнорируем бинарники (скомпилированному коду не место на сервере)
+# Build artifacts and binaries
 *.exe
 *.out
 *.app
+*.o
+*.obj
+*.a
+*.so
+*.dylib
+lob_engine
+build/
+bin/
 
-# Игнорируем файлы с секретами, токенами и ключами (САМОЕ ВАЖНОЕ)
+# Environment and secrets
 .env
+.env.*
 config.json
 secrets.txt
+
+# IDEs and OS files
+.vscode/
+.idea/
+*.swp
+*.DS_Store
+
+# Agent local configurations
+.agents/
+.agent/
+_agents/
+_agent/
