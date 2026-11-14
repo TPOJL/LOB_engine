@@ -5,14 +5,14 @@
 namespace lob {
 
 /**
- * @brief Separated Interface for market data input.
- * Decouples the domain/engine from specific file formats or external feeds.
+ * @brief Separated Interface for market data gateways.
+ * Enables swapping file formats and injecting a Service Stub for unit testing.
  */
 class IMarketDataGateway {
 public:
     virtual ~IMarketDataGateway() = default;
 
-    virtual DomainEvent readNextEvent() = 0;
+    [[nodiscard]] virtual DomainEvent readNextEvent() = 0;
 };
 
 } // namespace lob

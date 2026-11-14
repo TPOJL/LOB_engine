@@ -1,31 +1,32 @@
-# Limit Order Book (LOB) Matching Engine
+# Limit Order Book (LOB) Matching Engine & HCR Analysis
 
-A low-latency, event-driven Limit Order Book matching engine implemented in C++.
-Developed as part of academic research on statistical market correlation analysis under the supervision of Jarosław Duda (Jagiellonian University).
+An event-driven Limit Order Book matching engine and statistical analysis pipeline implemented in C++.
+Developed as part of academic research on statistical market correlation analysis (Hierarchical Correlation Reconstruction — HCR) under the supervision of Jarosław Duda (Jagiellonian University).
 
 ## Architecture & Design Patterns
-The engine is heavily optimized for performance and predictable execution times. The architecture leverages several core patterns:
-* **Object Pool:** To ensure zero-allocation order management during runtime and prevent memory fragmentation.
-* **Event Sourcing & Observer:** For real-time state updates and decoupled market data dissemination.
-* **Command, DTO & Strategy:** For structured request handling, data transfer, and flexible matching logic execution.
+The system is structured around classical enterprise and domain-driven patterns:
+* **Gateway (`MarketDataGateway`):** Step-by-step historical market data playback and validation from external files.
+* **Value Object (`Money`):** Exact fixed-point monetary representation with currency safety and remainder-preserving proportional allocation.
+* **Domain Event & Event Sourcing (`DomainEvent`, `LimitOrderBook`):** Deterministic order book updates, chronological event journaling, and full historical state reconstruction.
+* **Snapshot & DTO (`BookSnapshotDTO`):** Periodic extraction of market state features (`midPrice`, order book `imbalanceX`, and `futureReturnY`).
+* **Separated Interface & Plugin (`IAnalyzerPlugin`, `HCRCorrelationAnalyzer`):** Pluggable statistical analysis module computing EDF normalization, mixed Legendre polynomial moments (`Matrix4x4`), and independence tests.
 
 ## Features
-* Fast limit order insertion, modification, and cancellation.
-* Price-time priority matching algorithm.
-* Statistical module for computing hidden non-linear market correlations.
+* Historical data playback and validation.
+* Limit order queuing, price-time matching, partial execution, modification, and cancellation.
+* Chronological event logging and state reconstruction from any point in time.
+* Non-linear correlation analysis between order book imbalance and future price returns via HCR.
 
 ## Getting Started
 
 ### Prerequisites
-* **C++ Compiler:** GCC (MSYS2 for Windows) or Clang (macOS).
-* Support for C++17 / C++20.
+* **C++ Compiler:** Clang (macOS) or GCC (MSYS2 for Windows).
+* Support for C++20.
 
 ### Build and Run
-To compile the engine locally using the standard toolchain:
+To compile and run locally:
 
 ```bash
-# Compile the source code
-g++ main.cpp -o lob_engine
-
-# Run the executable
+clang++ -std=c++20 -Wall -Wextra -Werror -O3 -Iinclude main.cpp -o lob_engine
 ./lob_engine
+```
