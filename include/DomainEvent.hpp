@@ -41,16 +41,11 @@ struct DomainEvent {
     EventType type = EventType::NONE;
 
     friend std::ostream& operator<<(std::ostream& os, const DomainEvent& ev) {
-        auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(
-            ev.timestamp.time_since_epoch()
-        ).count();
+        auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(ev.timestamp.time_since_epoch()).count();
         double secondsAfterMidnight = static_cast<double>(nanos) / 1e9;
 
-        os << "[t=" << secondsAfterMidnight << "s"
-           << " | type=" << eventTypeToString(ev.type)
-           << " | id=" << ev.orderId
-           << " | vol=" << ev.volume
-           << " | price=" << ev.price << "]";
+        os << "[t=" << secondsAfterMidnight << "s | type=" << eventTypeToString(ev.type)
+           << " | id=" << ev.orderId << " | vol=" << ev.volume << " | price=" << ev.price << "]";
         return os;
     }
 };

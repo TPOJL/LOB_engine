@@ -2,8 +2,9 @@
 #include <iostream>
 #include "include/Money.hpp"
 #include "include/MarketDataGateway.hpp"
+#include "include/LimitOrderBook.hpp"
 
-void runSimulation(lob::IMarketDataGateway& gateway, uint64_t maxPrintEvents = 20) {
+void runSimulation(lob::IMarketDataGateway& gateway, lob::LimitOrderBook& book, uint64_t maxPrintEvents = 20) {
     uint64_t processedEvents = 0;
 
     std::cout << std::fixed << std::setprecision(6);
@@ -11,14 +12,10 @@ void runSimulation(lob::IMarketDataGateway& gateway, uint64_t maxPrintEvents = 2
     while (true) {
         lob::DomainEvent event = gateway.readNextEvent();
 
-        if (event.type == lob::EventType::END_OF_STREAM) {
-            break;
-        }
+        if (event.type == lob::EventType::END_OF_STREAM) break;
+        if (event.type == lob::EventType::NONE) continue;
 
-        if (event.type == lob::EventType::NONE) {
-            continue;
-        }
-
+        book.applyEvent(event);
         ++processedEvents;
 
         if (processedEvents <= maxPrintEvents) {
@@ -27,10 +24,11 @@ void runSimulation(lob::IMarketDataGateway& gateway, uint64_t maxPrintEvents = 2
     }
 
     if (processedEvents > maxPrintEvents) {
-        std::cout << "... (" << (processedEvents - maxPrintEvents)
-                  << " more events read from file)" << std::endl;
+        std::cout << "... (" << (processedEvents - maxPrintEvents) << " more events read from file)" << std::endl;
     }
-    std::cout << "Simulation finished. Total parsed events: " << processedEvents << std::endl;
+    std::cout << "Simulation finished. Total logged events: " << book.eventLog().size()
+              << " | Unique Bid price levels: " << book.bids().size()
+              << " | Unique Ask price levels: " << book.asks().size() << std::endl;
 }
 
 int main() {
@@ -68,13 +66,13 @@ int main() {
     }
 
     std::cout << "\n=== LOBSTER MarketDataGateway Test ===" << std::endl;
-    const std::string lobsterPath =
-        "../LOBSTER_SampleFile_AAPL_2012-06-21_1/AAPL_2012-06-21_34200000_57600000_message_1.csv";
+    const std::string lobsterPath = "../LOBSTER_SampleFile_AAPL_2012-06-21_1/AAPL_2012-06-21_34200000_57600000_message_1.csv";
 
     try {
         lob::MarketDataGateway gateway(lobsterPath);
+        lob::LimitOrderBook book;
         std::cout << "Reading from: " << gateway.filePath() << std::endl;
-        runSimulation(gateway);
+        runSimulation(gateway, book);
     } catch (const std::exception& e) {
         std::cerr << "Gateway error: " << e.what() << std::endl;
     }

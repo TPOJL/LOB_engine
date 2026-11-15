@@ -35,8 +35,7 @@ private:
 public:
     Money() : m_amount(0), m_currency("PLN") {}
 
-    Money(int64_t amount, std::string currency)
-        : m_amount(amount), m_currency(std::move(currency)) {}
+    Money(int64_t amount, std::string currency) : m_amount(amount), m_currency(std::move(currency)) {}
 
     [[nodiscard]] static Money fromDecimal(double amountMajor, const std::string& currency = "PLN") {
         int64_t cents = static_cast<int64_t>(std::round(amountMajor * 100.0));
@@ -61,9 +60,7 @@ public:
         return Money(newAmount, m_currency);
     }
 
-    [[nodiscard]] Money multiplay(double factor) const {
-        return multiply(factor);
-    }
+    [[nodiscard]] Money multiplay(double factor) const { return multiply(factor); }
 
     [[nodiscard]] std::vector<Money> allocate(const std::vector<int>& ratios) const {
         if (ratios.empty()) {
@@ -108,23 +105,14 @@ public:
         return 0;
     }
 
-    [[nodiscard]] bool greaterThan(const Money& other) const {
-        return compareTo(other) > 0;
-    }
+    [[nodiscard]] bool greaterThan(const Money& other) const { return compareTo(other) > 0; }
+    [[nodiscard]] bool greaterThen(const Money& other) const { return greaterThan(other); }
 
-    [[nodiscard]] bool greaterThen(const Money& other) const {
-        return greaterThan(other);
-    }
-
-    // Value Object equality and ordering operators (required for std::map<Money, uint32_t>)
     bool operator==(const Money& other) const noexcept {
         return m_amount == other.m_amount && m_currency == other.m_currency;
     }
 
-    bool operator!=(const Money& other) const noexcept {
-        return !(*this == other);
-    }
-
+    bool operator!=(const Money& other) const noexcept { return !(*this == other); }
     bool operator<(const Money& other) const { return compareTo(other) < 0; }
 
     friend std::ostream& operator<<(std::ostream& os, const Money& m) {
@@ -132,9 +120,7 @@ public:
         int64_t major = absAmount / 100;
         int64_t cents = absAmount % 100;
 
-        if (m.m_amount < 0) {
-            os << '-';
-        }
+        if (m.m_amount < 0) os << '-';
         os << major << '.' << (cents < 10 ? "0" : "") << cents << " " << m.m_currency;
         return os;
     }

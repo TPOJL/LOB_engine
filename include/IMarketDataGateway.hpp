@@ -6,7 +6,6 @@ namespace lob {
 
 /**
  * @brief Separated Interface for market data gateways.
- * Enables swapping file formats and injecting a Service Stub for unit testing.
  */
 class IMarketDataGateway {
 public:
