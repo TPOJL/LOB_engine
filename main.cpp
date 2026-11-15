@@ -1,37 +1,132 @@
+#include <cassert>
+#include <chrono>
+#include <cmath>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 #include "include/Money.hpp"
 #include "include/MarketDataGateway.hpp"
 #include "include/LimitOrderBook.hpp"
+#include "include/BookSnapshotMapper.hpp"
 
-void runSimulation(lob::IMarketDataGateway& gateway, lob::LimitOrderBook& book, uint64_t maxPrintEvents = 20) {
+void runOrderBookUnitTests() {
+    using namespace lob;
+    std::cout << "\n=== LimitOrderBook Matching & Service Stub Tests ===" << std::endl;
+
+    TimePoint t0{};
+    StubMarketDataGateway stubGateway({
+        DomainEvent{t0, 1, Money(10000, "USD"), 20, EventType::BUY},
+        DomainEvent{t0, 2, Money(10000, "USD"), 30, EventType::BUY},
+        DomainEvent{t0, 3, Money(10000, "USD"), 15, EventType::SELL},   // Partial fill of #1 (20 -> 5)
+        DomainEvent{t0, 4, Money(9950, "USD"),  40, EventType::SELL},   // Sweeps #1 (5) & #2 (30), rests 5 @ 99.50
+        DomainEvent{t0, 4, Money(9950, "USD"),  2,  EventType::MODIFY}, // Reduces #4 volume (5 -> 3)
+        DomainEvent{t0, 4, Money(9980, "USD"),  10, EventType::MODIFY}  // Moves #4 price to 99.80 (vol 10)
+    });
+
+    LimitOrderBook book;
+    IMarketDataGateway& feed = stubGateway;
+    while (true) {
+        DomainEvent ev = feed.readNextEvent();
+        if (ev.isEndOfStream()) break;
+        book.applyEvent(ev);
+    }
+
+    assert(book.bids().empty());
+    assert(book.asks().size() == 1);
+    assert(book.asks().begin()->first == Money(9980, "USD"));
+    assert(book.asks().begin()->second.totalVolume == 10);
+    assert(book.asks().begin()->second.orders.front().volume == 10);
+    std::cout << "FIFO, Partial Fill, Full Sweep & Modify via Service Stub: PASSED" << std::endl;
+
+    // Event Sourcing state reconstruction (replay) test
+    LimitOrderBook replayedBook;
+    replayedBook.replay(book.eventLog());
+    assert(replayedBook.asks().size() == 1);
+    assert(replayedBook.asks().begin()->first == Money(9980, "USD"));
+    assert(replayedBook.asks().begin()->second.totalVolume == 10);
+    std::cout << "Event Sourcing State Replay test: PASSED" << std::endl;
+
+    // Snapshot Mapper + DTO test (Bid: 99.20 vol 30, Ask: 99.80 vol 10 -> midPrice = 99.50, imbalanceX = (30-10)/40 = 0.5)
+    book.applyEvent(DomainEvent{t0, 5, Money(9920, "USD"), 30, EventType::BUY});
+    BookSnapshotMapper mapper;
+    const ISnapshotMapper& snapshotInterface = mapper;
+    BookSnapshotDTO snap = snapshotInterface.createSnapshot(book, t0);
+    assert(std::abs(snap.midPrice - 99.50) < 1e-9);
+    assert(std::abs(snap.imbalanceX - 0.5) < 1e-9);
+    std::cout << "BookSnapshotDTO & Mapper test: PASSED (" << snap << ")" << std::endl;
+
+    // Cancel existing & non-existent orders
+    book.applyEvent(DomainEvent{t0, 999999, Money(9980, "USD"), 10, EventType::CANCEL});
+    assert(book.activeOrdersCount() == 2);
+    book.applyEvent(DomainEvent{t0, 4, Money(9980, "USD"), 10, EventType::CANCEL});
+    book.applyEvent(DomainEvent{t0, 5, Money(9920, "USD"), 30, EventType::CANCEL});
+    assert(book.asks().empty());
+    assert(book.bids().empty());
+    assert(book.activeOrdersCount() == 0);
+    std::cout << "Order Cancel & Empty Book cleanup test: PASSED" << std::endl;
+}
+
+void runSimulation(lob::IMarketDataGateway& gateway, lob::LimitOrderBook& book, const lob::ISnapshotMapper& mapper, uint64_t maxPrintEvents = 20) {
     uint64_t processedEvents = 0;
+    std::vector<lob::BookSnapshotDTO> snapshots;
 
     std::cout << std::fixed << std::setprecision(6);
+    auto startTime = std::chrono::steady_clock::now();
 
     while (true) {
         lob::DomainEvent event = gateway.readNextEvent();
 
-        if (event.type == lob::EventType::END_OF_STREAM) break;
-        if (event.type == lob::EventType::NONE) continue;
+        if (event.isEndOfStream()) break;
+        if (event.isNull()) continue;
 
-        book.applyEvent(event);
         ++processedEvents;
+        bool shouldPrint = (processedEvents <= maxPrintEvents);
 
-        if (processedEvents <= maxPrintEvents) {
-            std::cout << "#" << std::setw(2) << processedEvents << " " << event << std::endl;
+        if (shouldPrint) {
+            std::cout << "#" << std::setw(2) << processedEvents << " " << event << '\n';
+        }
+
+        book.setLogFills(shouldPrint);
+        book.applyEvent(event);
+
+        // Capture a snapshot every 100 events when both Bid and Ask sides are present
+        if (processedEvents % 100 == 0 && book.hasBothSides()) {
+            snapshots.push_back(mapper.createSnapshot(book, event.timestamp));
         }
     }
 
+    mapper.populateFutureReturns(snapshots, 1);
+
+    auto endTime = std::chrono::steady_clock::now();
+    double elapsedMs = std::chrono::duration<double, std::milli>(endTime - startTime).count();
+
     if (processedEvents > maxPrintEvents) {
-        std::cout << "... (" << (processedEvents - maxPrintEvents) << " more events read from file)" << std::endl;
+        std::cout << "... (" << (processedEvents - maxPrintEvents) << " more events processed)" << std::endl;
     }
-    std::cout << "Simulation finished. Total logged events: " << book.eventLog().size()
-              << " | Unique Bid price levels: " << book.bids().size()
-              << " | Unique Ask price levels: " << book.asks().size() << std::endl;
+
+    std::cout << std::setprecision(2);
+    std::cout << "Simulation finished in " << elapsedMs << " ms | Total logged events: " << book.eventLog().size()
+              << " | Captured snapshots: " << snapshots.size()
+              << " | Active resting orders: " << book.activeOrdersCount() << std::endl;
+
+    if (!book.bids().empty() && !book.asks().empty()) {
+        std::cout << "Final Best Bid: " << book.bids().begin()->first
+                  << " (vol: " << book.bids().begin()->second.totalVolume << ")"
+                  << " | Final Best Ask: " << book.asks().begin()->first
+                  << " (vol: " << book.asks().begin()->second.totalVolume << ")" << std::endl;
+    }
+
+    if (snapshots.size() >= 3) {
+        std::cout << std::setprecision(4);
+        std::cout << "\n--- Sample Captured BookSnapshotDTOs ---" << std::endl;
+        for (size_t i = 0; i < 3; ++i) {
+            std::cout << "#" << (i + 1) << " " << snapshots[i] << std::endl;
+        }
+    }
 }
 
 int main() {
+    std::ios::sync_with_stdio(false);
     using lob::Money;
 
     std::cout << "=== Money Value Object Tests ===" << std::endl;
@@ -65,14 +160,17 @@ int main() {
         std::cout << "Caught expected exception: " << e.what() << std::endl;
     }
 
-    std::cout << "\n=== LOBSTER MarketDataGateway Test ===" << std::endl;
+    runOrderBookUnitTests();
+
+    std::cout << "\n=== LOBSTER MarketDataGateway + LimitOrderBook Simulation ===" << std::endl;
     const std::string lobsterPath = "../LOBSTER_SampleFile_AAPL_2012-06-21_1/AAPL_2012-06-21_34200000_57600000_message_1.csv";
 
     try {
         lob::MarketDataGateway gateway(lobsterPath);
         lob::LimitOrderBook book;
+        lob::BookSnapshotMapper snapshotMapper;
         std::cout << "Reading from: " << gateway.filePath() << std::endl;
-        runSimulation(gateway, book);
+        runSimulation(gateway, book, snapshotMapper);
     } catch (const std::exception& e) {
         std::cerr << "Gateway error: " << e.what() << std::endl;
     }

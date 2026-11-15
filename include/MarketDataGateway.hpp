@@ -2,8 +2,8 @@
 
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -12,18 +12,26 @@
 namespace lob {
 
 /**
- * @brief Gateway for step-by-step historical market data playback from a LOBSTER CSV file.
+ * @brief Gateway (Martin Fowler) encapsulating external LOBSTER file access and translation.
+ * Translates raw CSV rows (including re-indexing Type 4 executions into incoming BUY/SELL orders)
+ * into clean DomainEvent objects completely isolated from the matching engine.
  */
 class MarketDataGateway : public IMarketDataGateway {
 private:
     std::string m_filePath;
     std::ifstream m_stream;
+    std::string m_lineBuffer;
+    uint64_t m_syntheticOrderId = 1ULL << 62;
 
     static EventType mapLobsterEventType(int rawType, int direction) noexcept {
         switch (rawType) {
             case 1:
+                // Passive limit order submission: 1 = BUY, -1 = SELL
                 return (direction == 1) ? EventType::BUY : EventType::SELL;
             case 4:
+                // Re-index spread-crossing execution back into the incoming aggressive order:
+                // hitting a resting SELL (-1) means an incoming BUY arrived;
+                // hitting a resting BUY (1) means an incoming SELL arrived.
                 return (direction == -1) ? EventType::BUY : EventType::SELL;
             case 2:
                 return EventType::MODIFY;
@@ -39,53 +47,55 @@ public:
         if (!m_stream.is_open()) {
             throw std::runtime_error("Failed to open market data file: " + m_filePath);
         }
+        m_lineBuffer.reserve(128);
     }
 
     [[nodiscard]] const std::string& filePath() const noexcept { return m_filePath; }
 
     [[nodiscard]] DomainEvent readNextEvent() override {
-        std::string line;
-        while (std::getline(m_stream, line)) {
-            if (line.empty()) continue;
+        while (std::getline(m_stream, m_lineBuffer)) {
+            if (m_lineBuffer.empty()) continue;
 
-            std::stringstream ss(line);
-            std::string token;
+            const char* ptr = m_lineBuffer.c_str();
+            char* end = nullptr;
 
-            if (!std::getline(ss, token, ',')) continue;
-            double timeSeconds = std::stod(token);
+            double timeSeconds = std::strtod(ptr, &end);
+            if (ptr == end || *end != ',') continue;
 
-            if (!std::getline(ss, token, ',')) continue;
-            int rawType = std::stoi(token);
+            ptr = end + 1;
+            int rawType = static_cast<int>(std::strtol(ptr, &end, 10));
+            if (ptr == end || *end != ',') continue;
 
-            if (!std::getline(ss, token, ',')) continue;
-            uint64_t orderId = std::stoull(token);
+            ptr = end + 1;
+            uint64_t orderId = std::strtoull(ptr, &end, 10);
+            if (ptr == end || *end != ',') continue;
 
-            if (!std::getline(ss, token, ',')) continue;
-            uint32_t volume = static_cast<uint32_t>(std::stoul(token));
+            ptr = end + 1;
+            auto volume = static_cast<uint32_t>(std::strtoul(ptr, &end, 10));
+            if (ptr == end || *end != ',') continue;
 
-            if (!std::getline(ss, token, ',')) continue;
-            int64_t rawPrice = std::stoll(token);
+            ptr = end + 1;
+            int64_t rawPrice = std::strtoll(ptr, &end, 10);
+            if (ptr == end || *end != ',') continue;
 
-            if (!std::getline(ss, token, ',')) continue;
-            int direction = std::stoi(token);
+            ptr = end + 1;
+            int direction = static_cast<int>(std::strtol(ptr, &end, 10));
+            if (ptr == end) continue;
 
             EventType mappedType = mapLobsterEventType(rawType, direction);
             if (mappedType == EventType::NONE) continue;
 
             auto nanos = std::chrono::nanoseconds(static_cast<int64_t>(std::llround(timeSeconds * 1e9)));
 
-            DomainEvent event;
-            event.timestamp = TimePoint(std::chrono::duration_cast<TimePoint::duration>(nanos));
-            event.orderId = orderId;
-            event.price = Money(rawPrice / 100, "USD");
-            event.volume = volume;
-            event.type = mappedType;
-            return event;
+            return DomainEvent{
+                TimePoint(std::chrono::duration_cast<TimePoint::duration>(nanos)),
+                (rawType == 4) ? (++m_syntheticOrderId) : orderId,
+                Money(rawPrice / 100, "USD"),
+                volume,
+                mappedType
+            };
         }
-
-        DomainEvent eofEvent;
-        eofEvent.type = EventType::END_OF_STREAM;
-        return eofEvent;
+        return DomainEvent::endOfStream();
     }
 };
 

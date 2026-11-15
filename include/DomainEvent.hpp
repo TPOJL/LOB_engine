@@ -31,7 +31,8 @@ inline const char* eventTypeToString(EventType type) noexcept {
 }
 
 /**
- * @brief Domain Event representing a standardized market operation parsed from raw data.
+ * @brief Domain Event (Martin Fowler) representing a standardized market operation.
+ * Includes Special Case factory methods for null and end-of-stream states.
  */
 struct DomainEvent {
     TimePoint timestamp{};
@@ -39,6 +40,17 @@ struct DomainEvent {
     Money price;
     uint32_t volume = 0;
     EventType type = EventType::NONE;
+
+    [[nodiscard]] static DomainEvent nullEvent() noexcept { return DomainEvent{}; }
+
+    [[nodiscard]] static DomainEvent endOfStream() noexcept {
+        DomainEvent ev;
+        ev.type = EventType::END_OF_STREAM;
+        return ev;
+    }
+
+    [[nodiscard]] bool isEndOfStream() const noexcept { return type == EventType::END_OF_STREAM; }
+    [[nodiscard]] bool isNull() const noexcept { return type == EventType::NONE; }
 
     friend std::ostream& operator<<(std::ostream& os, const DomainEvent& ev) {
         auto nanos = std::chrono::duration_cast<std::chrono::nanoseconds>(ev.timestamp.time_since_epoch()).count();
