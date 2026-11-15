@@ -66,7 +66,7 @@ void runOrderBookUnitTests() {
     std::cout << "Order Cancel & Empty Book cleanup test: PASSED" << std::endl;
 }
 
-void runSimulation(lob::IMarketDataGateway& gateway, lob::LimitOrderBook& book, const lob::ISnapshotMapper& mapper, uint64_t maxPrintEvents = 20) {
+void runSimulation(lob::IMarketDataGateway& gateway, lob::LimitOrderBook& book, const lob::ISnapshotMapper& mapper, uint64_t maxPrintEvents = 10) {
     uint64_t processedEvents = 0;
     std::vector<lob::BookSnapshotDTO> snapshots;
 
@@ -116,10 +116,10 @@ void runSimulation(lob::IMarketDataGateway& gateway, lob::LimitOrderBook& book, 
                   << " (vol: " << book.asks().begin()->second.totalVolume << ")" << std::endl;
     }
 
-    if (snapshots.size() >= 3) {
+    if (snapshots.size() >= 100) {
         std::cout << std::setprecision(4);
         std::cout << "\n--- Sample Captured BookSnapshotDTOs ---" << std::endl;
-        for (size_t i = 0; i < 3; ++i) {
+        for (size_t i = 0; i < 10; ++i) {
             std::cout << "#" << (i + 1) << " " << snapshots[i] << std::endl;
         }
     }
