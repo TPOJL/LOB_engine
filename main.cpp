@@ -14,7 +14,8 @@ int main() {
     }
 
     std::cout << "\n=== LOBSTER MarketSimulationService (Service Layer) ===" << std::endl;
-    const std::string lobsterPath = "../LOBSTER_SampleFile_AAPL_2012-06-21_1/AAPL_2012-06-21_34200000_57600000_message_1.csv";
+    // const std::string lobsterPath = "../AAPL_data/AAPL_message.csv";
+    const std::string lobsterPath = "../MSFT_data/MSFT_message.csv";
 
     try {
         lob::MarketDataGateway gateway(lobsterPath);
